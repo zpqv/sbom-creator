@@ -4,8 +4,6 @@ package main
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -15,16 +13,11 @@ var dataRe = regexp.MustCompile(`(?s)const DATA = (\[.*?\]);\nconst MISSING`)
 
 func TestRenderRoundTrip(t *testing.T) {
 	comps := []Component{
-		{Name: "jq", Version: "1.8", Category: "Developer Tools", Source: "Homebrew (formula)", Vendor: "jq", Desc: "JSON processor", Deps: []string{"oniguruma"}, UsedBy: 0},
+		{Name: "jq", Version: "1.8", Category: "Developer Tools", Source: "Homebrew (formula)", Vendor: "jq", Desc: "JSON processor", License: "MIT", PURL: "pkg:brew/jq@1.8", Deps: []string{"oniguruma"}, UsedBy: 0},
 	}
 	miss := []MissingTool{{Name: "cargo (Rust)", Install: "brew install rust", Site: "https://rustup.rs"}}
 
-	path := filepath.Join(t.TempDir(), "out.html")
-	if err := render(path, comps, miss, "host1", "macOS 15 (arm64)", "2026-06-20 10:00"); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(path)
-	html := string(b)
+	html := renderHTML(comps, miss, "host1", "macOS 15 (arm64)", "2026-06-20 10:00")
 
 	for _, ph := range []string{"__DATA__", "__MISSING__", "__TOTAL__", "__HOST__", "__OSLABEL__", "__DATE__"} {
 		if strings.Contains(html, ph) {
@@ -45,7 +38,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	if err := json.Unmarshal([]byte(m[1]), &got); err != nil {
 		t.Fatalf("embedded JSON does not parse: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "jq" {
+	if len(got) != 1 || got[0].Name != "jq" || got[0].License != "MIT" || got[0].PURL != "pkg:brew/jq@1.8" {
 		t.Errorf("round-tripped data wrong: %+v", got)
 	}
 }
@@ -66,14 +59,6 @@ func TestRenderInjectionSafety(t *testing.T) {
 	}
 	if strings.Contains(html, "<script>alert(1)</script>") {
 		t.Error("unescaped injected <script> survived into output")
-	}
-}
-
-func TestRenderWriteError(t *testing.T) {
-	// Output path inside a non-existent directory -> WriteFile fails.
-	bad := filepath.Join(t.TempDir(), "no-such-dir", "out.html")
-	if err := render(bad, nil, nil, "h", "o", "d"); err == nil {
-		t.Error("expected write error for path in missing directory")
 	}
 }
 

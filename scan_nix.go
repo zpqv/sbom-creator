@@ -26,7 +26,7 @@ func parseDpkg(out string) []Component {
 
 func scanRpm() []Component {
 	out, ok := runIn(60*time.Second, "rpm", "-qa", "--qf",
-		"%{NAME}\t%{VERSION}-%{RELEASE}\t%{SUMMARY}\t%{URL}\n")
+		"%{NAME}\t%{VERSION}-%{RELEASE}\t%{SUMMARY}\t%{URL}\t%{LICENSE}\n")
 	if !ok {
 		return nil
 	}
@@ -46,16 +46,19 @@ func parseTabbed(out, source, fallbackVendor string) []Component {
 		if len(f) < 2 || f[0] == "" {
 			continue
 		}
-		desc, home := "", ""
+		desc, home, license := "", "", ""
 		if len(f) >= 3 {
 			desc = f[2]
 		}
 		if len(f) >= 4 {
 			home = f[3]
 		}
+		if len(f) >= 5 { // rpm carries %{LICENSE}; dpkg has no 5th field
+			license = f[4]
+		}
 		c := Component{
 			Name: f[0], Version: f[1], Source: source,
-			Desc: desc, Homepage: home,
+			Desc: desc, Homepage: home, License: license,
 			Vendor: firstNonEmpty(vendorFromHomepage(home), fallbackVendor),
 		}
 		c.Category = classifyCategory(c)

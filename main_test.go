@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -243,6 +244,57 @@ func TestRealMainVersion(t *testing.T) {
 	}
 	if got := strings.TrimSpace(buf.String()); got != version {
 		t.Errorf("-version printed %q, want %q", got, version)
+	}
+}
+
+func TestRealMainFormatsToFile(t *testing.T) {
+	dir := t.TempDir()
+	// CycloneDX to an explicit file; no -no-open, but a non-HTML format must
+	// never try to open a browser (covers the format=="html" guard on open).
+	cdx := filepath.Join(dir, "bom.cdx.json")
+	var buf bytes.Buffer
+	if code := realMain([]string{"-format", "cyclonedx", "-o", cdx, "-quiet"}, &buf, fakeScanners()); code != 0 {
+		t.Fatalf("cyclonedx returned %d", code)
+	}
+	b, err := os.ReadFile(cdx)
+	if err != nil || !strings.Contains(string(b), "CycloneDX") {
+		t.Errorf("cyclonedx file wrong: err=%v", err)
+	}
+}
+
+func TestRealMainFormatsToStdout(t *testing.T) {
+	// Non-HTML format with no -o streams to stdout (pipe-friendly) and emits
+	// nothing but the document (logs suppressed).
+	var buf bytes.Buffer
+	if code := realMain([]string{"-format", "spdx"}, &buf, fakeScanners()); code != 0 {
+		t.Fatalf("spdx returned %d", code)
+	}
+	out := strings.TrimSpace(buf.String())
+	if !strings.HasPrefix(out, "{") || !strings.Contains(out, "SPDX-2.3") {
+		t.Errorf("spdx stdout not clean document: %.40q", out)
+	}
+	if strings.Contains(out, "Inventoried") || strings.Contains(out, "scanning") {
+		t.Error("progress logs leaked into stdout document")
+	}
+
+	// Explicit -o - also routes to stdout, for any format.
+	var buf2 bytes.Buffer
+	if code := realMain([]string{"-format", "json", "-o", "-"}, &buf2, fakeScanners()); code != 0 {
+		t.Fatalf("json -o - returned %d", code)
+	}
+	var arr []Component
+	if err := json.Unmarshal(buf2.Bytes(), &arr); err != nil {
+		t.Errorf("json -o - not valid JSON array: %v", err)
+	}
+}
+
+func TestRealMainUnknownFormat(t *testing.T) {
+	var buf bytes.Buffer
+	if code := realMain([]string{"-format", "bogus"}, &buf, fakeScanners()); code != 2 {
+		t.Errorf("unknown format returned %d, want 2", code)
+	}
+	if !strings.Contains(buf.String(), "unknown -format") {
+		t.Errorf("expected error message, got %q", buf.String())
 	}
 }
 

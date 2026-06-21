@@ -19,7 +19,7 @@ func byName(comps []Component) map[string]Component {
 
 const brewJSON = `{
  "formulae":[
-   {"name":"jq","desc":"JSON processor","homepage":"https://jqlang.github.io/jq/","dependencies":["oniguruma"],"installed":[{"version":"1.8.1"}]},
+   {"name":"jq","desc":"JSON processor","homepage":"https://jqlang.github.io/jq/","license":"MIT","dependencies":["oniguruma"],"installed":[{"version":"1.8.1"}]},
    {"name":"orphan","desc":"no installed record","homepage":"","dependencies":[],"installed":[]}
  ],
  "casks":[
@@ -34,7 +34,7 @@ func TestParseBrew(t *testing.T) {
 	if len(comps) != 4 {
 		t.Fatalf("want 4 components, got %d", len(comps))
 	}
-	if jq := m["jq"]; jq.Version != "1.8.1" || jq.Category != "Developer Tools" || len(jq.Deps) != 1 {
+	if jq := m["jq"]; jq.Version != "1.8.1" || jq.Category != "Developer Tools" || len(jq.Deps) != 1 || jq.License != "MIT" {
 		t.Errorf("jq parsed wrong: %+v", jq)
 	}
 	if m["orphan"].Version != "" {
@@ -61,8 +61,8 @@ func TestParseNpmRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(filepath.Join(root, "cli"), `{"name":"cli","version":"1.0","description":"a tool","homepage":"https://github.com/acme/cli","dependencies":{"dep-a":"1","dep-b":"2"}}`)
-	write(filepath.Join(root, "@scope", "pkg"), `{"name":"@scope/pkg","version":"2.0"}`)
+	write(filepath.Join(root, "cli"), `{"name":"cli","version":"1.0","description":"a tool","homepage":"https://github.com/acme/cli","license":"Apache-2.0","dependencies":{"dep-a":"1","dep-b":"2"}}`)
+	write(filepath.Join(root, "@scope", "pkg"), `{"name":"@scope/pkg","version":"2.0","license":{"type":"ISC"}}`)
 	// noise that must be ignored:
 	os.MkdirAll(filepath.Join(root, ".bin"), 0o755)
 	os.MkdirAll(filepath.Join(root, "empty"), 0o755) // dir with no package.json
@@ -73,11 +73,11 @@ func TestParseNpmRoot(t *testing.T) {
 	if len(comps) != 2 {
 		t.Fatalf("want 2 npm components, got %d: %+v", len(comps), comps)
 	}
-	if c := m["cli"]; c.Vendor != "acme" || len(c.Deps) != 2 {
+	if c := m["cli"]; c.Vendor != "acme" || len(c.Deps) != 2 || c.License != "Apache-2.0" {
 		t.Errorf("cli parsed wrong: %+v", c)
 	}
-	if _, ok := m["@scope/pkg"]; !ok {
-		t.Error("scoped package not parsed")
+	if c, ok := m["@scope/pkg"]; !ok || c.License != "ISC" { // legacy object license form
+		t.Errorf("scoped package parsed wrong: %+v", c)
 	}
 	if parseNpmRoot(filepath.Join(root, "does-not-exist")) != nil {
 		t.Error("missing root should parse to nil")
@@ -104,11 +104,13 @@ const pipShow = `Name: requests
 Version: ignored
 Summary: Python HTTP for Humans.
 Home-page: https://requests.readthedocs.io
+License: Apache-2.0
 Requires: certifi, idna
 ---
 Name: certifi
 Summary: UNKNOWN
 Home-page:
+License: UNKNOWN
 Requires:
 `
 
@@ -121,11 +123,11 @@ func TestParsePip(t *testing.T) {
 	// "Python HTTP for Humans." matches the http/networking keyword rule, which
 	// runs before the pip source-default — generic categories are more useful
 	// than a blanket "Python Library".
-	if r := m["requests"]; r.Version != "2.33.1" || len(r.Deps) != 2 || r.Category != "Networking & Protocols" {
+	if r := m["requests"]; r.Version != "2.33.1" || len(r.Deps) != 2 || r.Category != "Networking & Protocols" || r.License != "Apache-2.0" {
 		t.Errorf("requests parsed wrong: %+v", r)
 	}
-	if c := m["certifi"]; c.Desc != "" { // UNKNOWN normalized to empty
-		t.Errorf("certifi summary should be empty, got %q", c.Desc)
+	if c := m["certifi"]; c.Desc != "" || c.License != "" { // UNKNOWN normalized to empty
+		t.Errorf("certifi summary/license should be empty, got desc=%q license=%q", c.Desc, c.License)
 	}
 
 	// fallback path when `pip show` is unavailable
@@ -160,6 +162,7 @@ const gemDetails = `nokogiri (1.13.8)
 
 rake (12.3.3)
     Homepage: https://github.com/ruby/rake
+    Licenses: MIT, Apache-2.0
     Rake is a Make-like build utility.
 `
 
@@ -169,11 +172,11 @@ func TestParseGem(t *testing.T) {
 	if len(comps) != 2 {
 		t.Fatalf("want 2 gems, got %d: %+v", len(comps), comps)
 	}
-	if n := m["nokogiri"]; n.Version != "1.13.8" || n.Homepage != "https://nokogiri.org" || n.Desc == "" {
+	if n := m["nokogiri"]; n.Version != "1.13.8" || n.Homepage != "https://nokogiri.org" || n.Desc == "" || n.License != "MIT" {
 		t.Errorf("nokogiri parsed wrong: %+v", n)
 	}
-	if r := m["rake"]; r.Vendor != "ruby" { // github org fallback
-		t.Errorf("rake vendor = %q", r.Vendor)
+	if r := m["rake"]; r.Vendor != "ruby" || r.License != "MIT, Apache-2.0" { // github org fallback + plural Licenses:
+		t.Errorf("rake parsed wrong: %+v", r)
 	}
 	if parseGem("") != nil {
 		t.Error("empty gem output should parse to nil")
@@ -203,16 +206,30 @@ func TestParseTabbed(t *testing.T) {
 		t.Fatalf("want 2 dpkg comps, got %d: %+v", len(comps), comps)
 	}
 	m := byName(comps)
-	if m["vim"].Desc == "" || m["vim"].Source != "dpkg (Debian/Ubuntu)" {
-		t.Errorf("vim parsed wrong: %+v", m["vim"])
+	if m["vim"].Desc == "" || m["vim"].Source != "dpkg (Debian/Ubuntu)" || m["vim"].License != "" {
+		t.Errorf("vim parsed wrong (dpkg has no license field): %+v", m["vim"])
 	}
 	if m["bare"].Vendor != "Distribution package" {
 		t.Errorf("bare vendor = %q", m["bare"].Vendor)
 	}
-	// parseRpm shares the engine but differs in label
-	r := parseRpm("zlib\t1.3-1\tcompression library\thttps://zlib.net\n")
-	if len(r) != 1 || r[0].Source != "rpm (Fedora/RHEL/SUSE)" {
+	// parseRpm shares the engine but adds a 5th license field.
+	r := parseRpm("zlib\t1.3-1\tcompression library\thttps://zlib.net\tZlib\n")
+	if len(r) != 1 || r[0].Source != "rpm (Fedora/RHEL/SUSE)" || r[0].License != "Zlib" {
 		t.Errorf("parseRpm wrong: %+v", r)
+	}
+}
+
+func TestNpmLicense(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{`"MIT"`, "MIT"},                    // modern string form
+		{`{"type":"ISC","url":"x"}`, "ISC"}, // legacy object form
+		{`["MIT"]`, ""},                     // array form (unsupported) -> empty
+		{``, ""},                            // absent
+	}
+	for _, c := range cases {
+		if got := npmLicense([]byte(c.in)); got != c.want {
+			t.Errorf("npmLicense(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 

@@ -14,6 +14,7 @@ type brewInfo struct {
 		Name         string   `json:"name"`
 		Desc         string   `json:"desc"`
 		Homepage     string   `json:"homepage"`
+		License      string   `json:"license"` // SPDX expression, may be null
 		Dependencies []string `json:"dependencies"`
 		Installed    []struct {
 			Version string `json:"version"`
@@ -54,7 +55,7 @@ func parseBrew(out string) []Component {
 		c := Component{
 			Name: f.Name, Version: ver, Source: "Homebrew (formula)",
 			Desc: f.Desc, Homepage: f.Homepage, Deps: f.Dependencies,
-			Vendor: vendorFromHomepage(f.Homepage),
+			Vendor: vendorFromHomepage(f.Homepage), License: f.License,
 		}
 		c.Category = classifyCategory(c)
 		comps = append(comps, c)

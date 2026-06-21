@@ -66,15 +66,38 @@ go install github.com/zpqv/sbom-creator@latest
 ## Usage
 
 ```
-sbom-creator                 # scan, write ./sbom.html, open it in the browser
-sbom-creator -o report.html  # choose the output path
-sbom-creator -no-open        # don't auto-open the browser
-sbom-creator -quiet          # no progress output
-sbom-creator -version        # print the version and exit
+sbom-creator                      # scan, write ./sbom.html, open it in the browser
+sbom-creator -o report.html       # choose the output path
+sbom-creator -no-open             # don't auto-open the browser
+sbom-creator -quiet               # no progress output
+sbom-creator -version             # print the version and exit
+sbom-creator -format cyclonedx    # emit a standard SBOM instead of the webpage
 ```
 
-Run the binary for your platform — there is nothing else to install. The tool
-writes `sbom.html` and opens it in your default browser.
+Run the binary for your platform — there is nothing else to install. With no
+flags it writes `sbom.html` and opens it in your default browser.
+
+### SBOM formats
+
+`-format` selects the output. The default `html` writes the interactive page;
+the machine formats stream to stdout (so they pipe into other tools), or take an
+explicit `-o file`:
+
+| `-format` | Output |
+|-----------|--------|
+| `html` (default) | self-contained interactive webpage |
+| `cyclonedx` | CycloneDX 1.6 JSON |
+| `spdx` | SPDX 2.3 JSON |
+| `json` | the raw component list as JSON |
+
+Each component carries a Package URL (`purl`) and license where the source
+exposes one, so the output drops straight into the standard ecosystem:
+
+```sh
+sbom-creator -format cyclonedx | grype        # scan for known vulnerabilities
+sbom-creator -format spdx -o sbom.spdx.json   # save an SPDX document
+sbom-creator -format json | jq '.[] | select(.license=="")'   # find unlicensed
+```
 
 ## What it scans
 

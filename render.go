@@ -5,25 +5,18 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
-	"os"
 	"strings"
 )
 
 //go:embed template.html
 var templateHTML string
 
-// render writes the self-contained SBOM webpage. The template is embedded in
-// the binary, and the component data is injected as JSON into an inline
-// <script>. Go's encoding/json escapes <, > and & to \u00xx by default, so the
-// payload cannot break out of the script element.
-func render(path string, comps []Component, missing []MissingTool, host, osLabel, date string) error {
-	return os.WriteFile(path, []byte(renderHTML(comps, missing, host, osLabel, date)), 0o644)
-}
-
-// renderHTML is the pure core: it produces the full self-contained page as a
-// string. Kept separate from file I/O so it can be fuzzed for injection safety.
-// json.Marshal of these concrete types (only string/[]string/int fields) is
-// infallible, so its error is intentionally discarded rather than carried.
+// renderHTML produces the full self-contained webpage as a string. The template
+// is embedded in the binary and the component data is injected as JSON into an
+// inline <script>; Go's encoding/json escapes <, > and & to \u00xx, so the
+// payload cannot break out of the script element. Kept pure (no file I/O) so it
+// can be fuzzed for injection safety. json.Marshal of these concrete types
+// (only string/[]string/int fields) is infallible, so its error is discarded.
 func renderHTML(comps []Component, missing []MissingTool, host, osLabel, date string) string {
 	data, _ := json.Marshal(comps)
 	miss, _ := json.Marshal(missing)

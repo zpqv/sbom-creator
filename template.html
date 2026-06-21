@@ -69,7 +69,7 @@ footer{color:var(--mut);font-size:12px;padding:20px 32px 40px;max-width:1500px;m
 <table id="tbl"><thead><tr>
   <th data-k="name">Component</th><th data-k="version">Version</th>
   <th data-k="category">Category</th><th data-k="source">Source</th>
-  <th data-k="vendor">Provider</th><th data-k="usedBy">Deps</th><th>Description</th>
+  <th data-k="vendor">Provider</th><th data-k="license">License</th><th data-k="usedBy">Deps</th><th>Description</th>
 </tr></thead><tbody id="body"></tbody></table>
 </div>
 <footer>Built locally by SBOM Creator from package-manager metadata. No data left this machine and no network was used. Provider names are inferred from each component's published homepage and may name the project/foundation rather than a commercial entity.</footer>
@@ -120,7 +120,7 @@ function filtered(){
 function render(){
   const rows=filtered();
   document.getElementById('count').textContent=`${rows.length} of ${DATA.length} shown`;
-  if(!rows.length){body.innerHTML='<tr><td colspan="7" class="empty">No components match.</td></tr>';return;}
+  if(!rows.length){body.innerHTML='<tr><td colspan="8" class="empty">No components match.</td></tr>';return;}
   body.innerHTML=rows.map((r,i)=>{
     const prov=r.homepage?`<a href="${esc(r.homepage)}" target="_blank" rel="noopener">${esc(r.vendor||host(r.homepage))}</a>`:esc(r.vendor||'—');
     const depBadge=(r.deps&&r.deps.length)?`<span class="dep" data-i="${i}">${r.deps.length} ▸</span>`:'<span class="ver">0</span>';
@@ -131,6 +131,7 @@ function render(){
       `<td><span class="cat">${esc(r.category)}</span></td>`+
       `<td class="src">${esc(r.source)}</td>`+
       `<td>${prov}</td>`+
+      `<td class="src">${esc(r.license||'—')}</td>`+
       `<td>${depBadge}${usedBy}${deplist}</td>`+
       `<td class="desc">${esc(r.desc)}</td></tr>`;
   }).join('');
@@ -141,7 +142,7 @@ document.getElementById('clear').onclick=()=>{q.value='';activeSrc.clear();activ
 document.querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(sortK===k)sortDir*=-1;else{sortK=k;sortDir=1;}render();});
 function dl(name,type,content){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 document.getElementById('dlJson').onclick=()=>dl('sbom.json','application/json',JSON.stringify(DATA,null,2));
-document.getElementById('dlCsv').onclick=()=>{const cols=['name','version','category','source','vendor','homepage','usedBy','deps','desc'];
+document.getElementById('dlCsv').onclick=()=>{const cols=['name','version','category','source','vendor','license','purl','homepage','usedBy','deps','desc'];
   const csv=[cols.join(',')].concat(filtered().map(r=>cols.map(c=>{let v=c==='deps'?(r.deps||[]).join('; '):r[c];return '"'+String(v==null?'':v).replace(/"/g,'""')+'"';}).join(','))).join('\n');
   dl('sbom.csv','text/csv',csv);};
 render();
