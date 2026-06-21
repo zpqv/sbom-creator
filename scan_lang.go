@@ -58,6 +58,26 @@ func parseNpmRoot(root string) []Component {
 	return comps
 }
 
+// npmLicense extracts a license id from the package.json "license" field, which
+// is a plain string in modern packages and an {"type":...} object in legacy
+// ones. Returns "" when absent or in an unrecognized shape.
+func npmLicense(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var obj struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(raw, &obj) == nil {
+		return obj.Type
+	}
+	return ""
+}
+
 // npmComponent builds a Component from a single package directory's
 // package.json, returning ok=false when the file is missing or unparseable.
 func npmComponent(dir string) (Component, bool) {
@@ -70,6 +90,7 @@ func npmComponent(dir string) (Component, bool) {
 		Version      string            `json:"version"`
 		Description  string            `json:"description"`
 		Homepage     string            `json:"homepage"`
+		License      json.RawMessage   `json:"license"` // string, or legacy {type,...}
 		Dependencies map[string]string `json:"dependencies"`
 	}
 	if json.Unmarshal(b, &p) != nil || p.Name == "" {
@@ -82,7 +103,8 @@ func npmComponent(dir string) (Component, bool) {
 	c := Component{
 		Name: p.Name, Version: p.Version, Source: "npm (global)",
 		Desc: p.Description, Homepage: p.Homepage, Deps: deps,
-		Vendor: firstNonEmpty(vendorFromHomepage(p.Homepage), "npm / community"),
+		Vendor:  firstNonEmpty(vendorFromHomepage(p.Homepage), "npm / community"),
+		License: npmLicense(p.License),
 	}
 	c.Category = classifyCategory(c)
 	return c, true
@@ -160,7 +182,7 @@ func parsePip(listJSON, showRaw string, showOK bool) []Component {
 	}
 	var comps []Component
 	for _, block := range strings.Split(showRaw, "---") {
-		var name, summary, home, requires string
+		var name, summary, home, requires, license string
 		for _, line := range strings.Split(block, "\n") {
 			switch {
 			case strings.HasPrefix(line, "Name:"):
@@ -169,12 +191,17 @@ func parsePip(listJSON, showRaw string, showOK bool) []Component {
 				summary = strings.TrimSpace(line[8:])
 			case strings.HasPrefix(line, "Home-page:"):
 				home = strings.TrimSpace(line[10:])
+			case strings.HasPrefix(line, "License:"):
+				license = strings.TrimSpace(line[8:])
 			case strings.HasPrefix(line, "Requires:"):
 				requires = strings.TrimSpace(line[9:])
 			}
 		}
 		if name == "" {
 			continue
+		}
+		if license == "UNKNOWN" {
+			license = ""
 		}
 		var deps []string
 		for _, d := range strings.Split(requires, ",") {
@@ -188,7 +215,7 @@ func parsePip(listJSON, showRaw string, showOK bool) []Component {
 		c := Component{
 			Name: name, Version: verOf[strings.ToLower(name)], Source: "pip (Python)",
 			Desc: summary, Homepage: home, Deps: deps,
-			Vendor: firstNonEmpty(vendorFromHomepage(home), "PyPI / community"),
+			Vendor: firstNonEmpty(vendorFromHomepage(home), "PyPI / community"), License: license,
 		}
 		c.Category = classifyCategory(c)
 		comps = append(comps, c)
@@ -236,8 +263,12 @@ func parseGem(out string) []Component {
 			if v := vendorFromHomepage(cur.Homepage); v != "" {
 				cur.Vendor = v
 			}
+		} else if strings.HasPrefix(trimmed, "Licenses:") {
+			cur.License = strings.TrimSpace(trimmed[len("Licenses:"):])
+		} else if strings.HasPrefix(trimmed, "License:") {
+			cur.License = strings.TrimSpace(trimmed[len("License:"):])
 		} else if cur.Desc == "" && trimmed != "" && !strings.HasPrefix(trimmed, "Author") &&
-			!strings.HasPrefix(trimmed, "Installed at") && !strings.HasPrefix(trimmed, "License") {
+			!strings.HasPrefix(trimmed, "Installed at") {
 			cur.Desc = trimmed
 		}
 	}

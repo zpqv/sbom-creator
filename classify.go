@@ -223,6 +223,10 @@ func vendorFromHomepage(hp string) string {
 	if m := ghOrgRe.FindStringSubmatch(host + u.Path); m != nil {
 		return m[1]
 	}
+	// Registrable-ish domain: the last two labels. The >= 2 boundary is an
+	// equivalent-mutation point — at len==2, joining the last two labels equals
+	// the whole host, so >= vs > cannot change behavior (mutation testing flags
+	// this one survivor as expected; see VALIDATION.md).
 	parts := strings.Split(host, ".")
 	if len(parts) >= 2 {
 		return strings.Join(parts[len(parts)-2:], ".")

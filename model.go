@@ -13,6 +13,8 @@ type Component struct {
 	Vendor   string   `json:"vendor"`
 	Desc     string   `json:"desc"`
 	Homepage string   `json:"homepage"`
+	License  string   `json:"license"` // SPDX id/expression when the source exposes it
+	PURL     string   `json:"purl"`    // package URL (pkg:...) computed in buildInventory
 	Deps     []string `json:"deps"`
 	UsedBy   int      `json:"usedBy"` // reverse-dependency count, computed after all scans
 }

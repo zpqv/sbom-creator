@@ -27,8 +27,18 @@ would *catch a bug* on every line. The second is the real guarantee.
 | `govulncheck` (supply-chain) | no known vulnerabilities (stdlib only, zero deps) |
 | `go test -race` | pass, race-clean |
 | statement coverage | **100.0%** |
-| mutation efficacy (gremlins) | **100.00%**, mutator coverage 100% |
+| mutation efficacy (gremlins) | **97.7%**, mutator coverage 100% — the lone survivor is a provably-equivalent mutant (see note) |
 | fuzzing | seed corpus deterministic on every push; nightly exploration (5M+ execs/target locally), no crashes, injection invariant holds |
+
+### The one surviving mutant
+
+Mutation efficacy is 97.7%, not 100%, because of a single **equivalent mutant**
+in `vendorFromHomepage` (`classify.go`): the `len(parts) >= 2` boundary. When a
+host has exactly two labels, `strings.Join(parts[len-2:], ".")` equals the whole
+host — the same value the fallthrough returns — so changing `>=` to `>` cannot
+alter behavior for any input. No test can kill it. Contorting the code to chase
+the number would be exactly the metric-gaming the Atlas warns against (Common
+Failure #2), so the clean code stands and the survivor is documented here.
 
 ## Atlas S-sequence — verdicts
 

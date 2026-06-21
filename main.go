@@ -112,7 +112,8 @@ func main() { osExit(realMain(os.Args[1:], os.Stdout, scanners())) }
 func realMain(args []string, stdout io.Writer, scs []Scanner) int {
 	fs := flag.NewFlagSet("sbom-creator", flag.ContinueOnError)
 	fs.SetOutput(stdout)
-	out := fs.String("o", "sbom.html", "output HTML file path")
+	out := fs.String("o", "sbom.html", "output file path, or - for stdout")
+	format := fs.String("format", "html", "output format: "+formatList())
 	noOpen := fs.Bool("no-open", false, "do not open the report in a browser when done")
 	quiet := fs.Bool("quiet", false, "suppress progress output")
 	showVersion := fs.Bool("version", false, "print version and exit")
@@ -123,10 +124,26 @@ func realMain(args []string, stdout io.Writer, scs []Scanner) int {
 		fmt.Fprintln(stdout, version)
 		return 0
 	}
+	gen, ok := generators[*format]
+	if !ok {
+		fmt.Fprintf(stdout, "unknown -format %q (want: %s)\n", *format, formatList())
+		return 2
+	}
+
+	// Where does output go? Explicit -o wins; otherwise non-HTML formats stream
+	// to stdout (pipe-friendly, e.g. `… -format cyclonedx | grype`) while HTML
+	// defaults to a file we can open in a browser.
+	oSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "o" {
+			oSet = true
+		}
+	})
+	toStdout := *out == "-" || (!oSet && *format != "html")
 
 	goos := runtime.GOOS
 	logf := func(format string, a ...any) {
-		if !*quiet {
+		if !*quiet && !toStdout { // keep stdout clean when it carries the SBOM
 			fmt.Fprintf(stdout, format+"\n", a...)
 		}
 	}
@@ -156,17 +173,26 @@ func realMain(args []string, stdout io.Writer, scs []Scanner) int {
 	all := buildInventory(raw)
 
 	host, _ := os.Hostname()
-	date := time.Now().Format("2006-01-02 15:04")
-	outPath, _ := filepath.Abs(*out)
+	now := time.Now()
+	content := gen(genCtx{
+		comps: all, missing: missing, host: host, osLabel: osLabel(),
+		date: now.Format("2006-01-02 15:04"), timestamp: now.Format(time.RFC3339),
+	})
 
-	if err := render(outPath, all, missing, host, osLabel(), date); err != nil {
+	if toStdout {
+		stdout.Write(content)
+		return 0
+	}
+
+	outPath, _ := filepath.Abs(*out)
+	if err := os.WriteFile(outPath, content, 0o644); err != nil {
 		fmt.Fprintln(stdout, "error writing report:", err)
 		return 1
 	}
 
 	logf(strings.Repeat("-", 52))
 	logf("Inventoried %d components from %d/%d sources.", len(all), relevantCount-len(missing), relevantCount)
-	logf("Report: %s", outPath)
+	logf("Report (%s): %s", *format, outPath)
 
 	if len(missing) > 0 && !*quiet {
 		fmt.Fprintln(stdout, "\nNot installed on this machine (install to include them, then re-run):")
@@ -181,7 +207,7 @@ func realMain(args []string, stdout io.Writer, scs []Scanner) int {
 		}
 	}
 
-	if !*noOpen {
+	if *format == "html" && !*noOpen {
 		openInBrowser(outPath)
 	}
 	return 0
@@ -221,6 +247,7 @@ func buildInventory(raw []Component) []Component {
 	for i := range all {
 		all[i].UsedBy = rev[all[i].Name]
 		all[i].Deps = dedupeStrings(all[i].Deps)
+		all[i].PURL = purlFor(all[i])
 	}
 
 	sort.Slice(all, func(i, j int) bool {
