@@ -31,31 +31,33 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
           echo "Releasing $ver"
 
-      - name: Cross-compile all targets
+      - name: Cross-compile + package all targets
         run: ./build.sh "${{ steps.v.outputs.version }}"
 
-      - name: Checksums
+      - name: Checksums (over the shipped archives)
         working-directory: dist
         run: |
-          sha256sum sbom-creator-* > SHA256SUMS
+          sha256sum sbom-creator-*.tar.gz sbom-creator-*.zip > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Smoke-test the Linux binary
+      - name: Smoke-test the shipped Linux archive
         run: |
-          ./dist/sbom-creator-linux-amd64 -version
-          ./dist/sbom-creator-linux-amd64 -o /tmp/out.html -no-open -quiet
-          grep -q "Software Bill of Materials" /tmp/out.html && echo "binary works"
+          tar -xzf dist/sbom-creator-linux-amd64.tar.gz -C /tmp
+          /tmp/sbom-creator -version
+          /tmp/sbom-creator -o /tmp/out.html -no-open -quiet
+          grep -q "Software Bill of Materials" /tmp/out.html && echo "archive binary works"
 
       - name: Create / update the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver="${{ steps.v.outputs.version }}"
+          assets="dist/sbom-creator-*.tar.gz dist/sbom-creator-*.zip dist/SHA256SUMS"
           # If invoked via workflow_dispatch the tag may not exist yet; create it
           # on this commit so the release has something to point at.
           gh release view "$ver" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            && gh release upload "$ver" dist/* --repo "$GITHUB_REPOSITORY" --clobber \
-            || gh release create "$ver" dist/* \
+            && gh release upload "$ver" $assets --repo "$GITHUB_REPOSITORY" --clobber \
+            || gh release create "$ver" $assets \
                  --repo "$GITHUB_REPOSITORY" \
                  --target "$GITHUB_SHA" \
                  --title "$ver" \
