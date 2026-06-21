@@ -16,39 +16,38 @@ provider/website it comes from, and a category.
 
 ## Install
 
-Download the binary for your platform from the
-[latest release](https://github.com/zpqv/sbom-creator/releases/latest). Each
-release also ships a `SHA256SUMS` file so you can verify the download.
+Download the archive for your platform from the
+[latest release](https://github.com/zpqv/sbom-creator/releases/latest) and
+extract it. Each archive contains a single `sbom-creator` binary; the release
+also ships `SHA256SUMS` to verify your download.
 
 | Platform | Asset |
 |----------|-------|
-| macOS (Apple Silicon) | `sbom-creator-darwin-arm64` |
-| macOS (Intel)         | `sbom-creator-darwin-amd64` |
-| Linux (x86-64)        | `sbom-creator-linux-amd64` |
-| Linux (ARM64)         | `sbom-creator-linux-arm64` |
-| Windows (x86-64)      | `sbom-creator-windows-amd64.exe` |
+| macOS (Apple Silicon) | `sbom-creator-darwin-arm64.tar.gz` |
+| macOS (Intel)         | `sbom-creator-darwin-amd64.tar.gz` |
+| Linux (x86-64)        | `sbom-creator-linux-amd64.tar.gz` |
+| Linux (ARM64)         | `sbom-creator-linux-arm64.tar.gz` |
+| Windows (x86-64)      | `sbom-creator-windows-amd64.zip` |
 
-**macOS** — the binary is not code-signed, so Gatekeeper quarantines downloads.
-Clear the quarantine flag, make it executable, and run it:
-
-```sh
-chmod +x sbom-creator-darwin-arm64
-xattr -d com.apple.quarantine sbom-creator-darwin-arm64   # or: right-click → Open, once
-./sbom-creator-darwin-arm64
-```
-
-**Linux**
+**macOS / Linux** — extract with the `tar` command (not by double-clicking in
+Finder) and run. The binary is unsigned, but a binary extracted by command-line
+`tar` is not quarantined, so it runs without a Gatekeeper prompt:
 
 ```sh
-chmod +x sbom-creator-linux-amd64
-./sbom-creator-linux-amd64
+# Apple Silicon shown; swap in your platform's filename.
+curl -L https://github.com/zpqv/sbom-creator/releases/latest/download/sbom-creator-darwin-arm64.tar.gz | tar xz
+./sbom-creator
 ```
 
-**Windows** (PowerShell) — SmartScreen may warn on an unsigned binary; choose
-*More info → Run anyway*, then:
+If you do download a bare binary instead and macOS blocks it, clear the
+quarantine flag once: `xattr -c sbom-creator && chmod +x sbom-creator`.
+
+**Windows** (PowerShell) — extract the `.zip`, then run. SmartScreen may warn on
+an unsigned binary; choose *More info → Run anyway*:
 
 ```powershell
-.\sbom-creator-windows-amd64.exe
+Expand-Archive sbom-creator-windows-amd64.zip
+.\sbom-creator-windows-amd64\sbom-creator.exe
 ```
 
 **Verify the download** (optional, recommended):
