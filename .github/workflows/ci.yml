@@ -2,6 +2,7 @@ name: validation
 
 on:
   push:
+    branches: ['**'] # all branches, but not tags (release.yml handles tags)
   pull_request:
   schedule:
     - cron: '27 7 * * *' # nightly: exploratory fuzzing (see the 'fuzz' job)

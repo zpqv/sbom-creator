@@ -1,0 +1,62 @@
+name: release
+
+# Cuts a GitHub Release with cross-compiled binaries for every OS/arch.
+# Trigger by pushing a semver tag (git tag v1.2.3 && git push origin v1.2.3),
+# or run manually from the Actions tab with a version like "v1.2.3".
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag, e.g. v1.2.3'
+        required: true
+
+permissions:
+  contents: write # needed to create the release and upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with: { go-version: 'stable', cache: false }
+
+      - name: Resolve version
+        id: v
+        run: |
+          ver="${{ github.event.inputs.version }}"
+          [ -z "$ver" ] && ver="${GITHUB_REF_NAME}"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Releasing $ver"
+
+      - name: Cross-compile all targets
+        run: ./build.sh "${{ steps.v.outputs.version }}"
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum sbom-creator-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Smoke-test the Linux binary
+        run: |
+          ./dist/sbom-creator-linux-amd64 -version
+          ./dist/sbom-creator-linux-amd64 -o /tmp/out.html -no-open -quiet
+          grep -q "Software Bill of Materials" /tmp/out.html && echo "binary works"
+
+      - name: Create / update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${{ steps.v.outputs.version }}"
+          # If invoked via workflow_dispatch the tag may not exist yet; create it
+          # on this commit so the release has something to point at.
+          gh release view "$ver" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            && gh release upload "$ver" dist/* --repo "$GITHUB_REPOSITORY" --clobber \
+            || gh release create "$ver" dist/* \
+                 --repo "$GITHUB_REPOSITORY" \
+                 --target "$GITHUB_SHA" \
+                 --title "$ver" \
+                 --generate-notes

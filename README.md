@@ -14,6 +14,56 @@ provider/website it comes from, and a category.
   Homebrew, no Rust), the tool names it and prints the exact install command,
   then continues with what it can read.
 
+## Install
+
+Download the binary for your platform from the
+[latest release](https://github.com/zpqv/sbom-creator/releases/latest). Each
+release also ships a `SHA256SUMS` file so you can verify the download.
+
+| Platform | Asset |
+|----------|-------|
+| macOS (Apple Silicon) | `sbom-creator-darwin-arm64` |
+| macOS (Intel)         | `sbom-creator-darwin-amd64` |
+| Linux (x86-64)        | `sbom-creator-linux-amd64` |
+| Linux (ARM64)         | `sbom-creator-linux-arm64` |
+| Windows (x86-64)      | `sbom-creator-windows-amd64.exe` |
+
+**macOS** — the binary is not code-signed, so Gatekeeper quarantines downloads.
+Clear the quarantine flag, make it executable, and run it:
+
+```sh
+chmod +x sbom-creator-darwin-arm64
+xattr -d com.apple.quarantine sbom-creator-darwin-arm64   # or: right-click → Open, once
+./sbom-creator-darwin-arm64
+```
+
+**Linux**
+
+```sh
+chmod +x sbom-creator-linux-amd64
+./sbom-creator-linux-amd64
+```
+
+**Windows** (PowerShell) — SmartScreen may warn on an unsigned binary; choose
+*More info → Run anyway*, then:
+
+```powershell
+.\sbom-creator-windows-amd64.exe
+```
+
+**Verify the download** (optional, recommended):
+
+```sh
+sha256sum -c SHA256SUMS --ignore-missing      # Linux
+shasum -a 256 -c SHA256SUMS --ignore-missing  # macOS
+```
+
+**With Go installed**, you can skip the download:
+
+```sh
+go install github.com/zpqv/sbom-creator@latest
+```
+
 ## Usage
 
 ```
@@ -21,9 +71,11 @@ sbom-creator                 # scan, write ./sbom.html, open it in the browser
 sbom-creator -o report.html  # choose the output path
 sbom-creator -no-open        # don't auto-open the browser
 sbom-creator -quiet          # no progress output
+sbom-creator -version        # print the version and exit
 ```
 
-Just run the binary for your platform — there is nothing else to install.
+Run the binary for your platform — there is nothing else to install. The tool
+writes `sbom.html` and opens it in your default browser.
 
 ## What it scans
 
@@ -57,7 +109,22 @@ go build -o sbom-creator .      # current platform
 ```
 
 `build.sh` produces darwin-arm64, darwin-amd64, linux-amd64, linux-arm64 and
-windows-amd64 with `CGO_ENABLED=0` (no C toolchain needed).
+windows-amd64 with `CGO_ENABLED=0` (no C toolchain needed). The version passed
+to `build.sh` is stamped into the binary (`sbom-creator -version`).
+
+## Releasing
+
+Releases are cut by `.github/workflows/release.yml` when a semver tag is pushed:
+
+```
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The workflow cross-compiles all five targets, generates `SHA256SUMS`,
+smoke-tests the Linux binary, and publishes a GitHub Release with the assets and
+auto-generated notes. You can also run it manually from the Actions tab
+(*Run workflow* → version) without pushing a tag.
 
 ## Testing
 

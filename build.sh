@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 VERSION="${1:-dev}"
-LDFLAGS="-s -w"   # strip symbols/debug for smaller binaries
+LDFLAGS="-s -w -X main.version=${VERSION}" # strip symbols/debug; stamp version
 export CGO_ENABLED=0
 
 mkdir -p dist
