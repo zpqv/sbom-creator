@@ -29,9 +29,7 @@ also ships `SHA256SUMS` to verify your download.
 | Linux (ARM64)         | `sbom-creator-linux-arm64.tar.gz` |
 | Windows (x86-64)      | `sbom-creator-windows-amd64.zip` |
 
-**macOS / Linux** — extract with the `tar` command (not by double-clicking in
-Finder) and run. The binary is unsigned, but a binary extracted by command-line
-`tar` is not quarantined, so it runs without a Gatekeeper prompt:
+**macOS / Linux** — install by piping the download straight into `tar`:
 
 ```sh
 # Apple Silicon shown; swap in your platform's filename.
@@ -39,8 +37,10 @@ curl -L https://github.com/zpqv/sbom-creator/releases/latest/download/sbom-creat
 ./sbom-creator
 ```
 
-If you do download a bare binary instead and macOS blocks it, clear the
-quarantine flag once: `xattr -c sbom-creator && chmod +x sbom-creator`.
+Streaming the archive into `tar` means it never lands on disk for macOS to
+quarantine, so the unsigned binary runs with no Gatekeeper prompt. If instead
+you downloaded the `.tar.gz` with a browser (which marks it as quarantined),
+clear the flag once after extracting: `xattr -c sbom-creator`.
 
 **Windows** (PowerShell) — extract the `.zip`, then run. SmartScreen may warn on
 an unsigned binary; choose *More info → Run anyway*:
