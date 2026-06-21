@@ -236,6 +236,16 @@ func TestMainEntrypoint(t *testing.T) {
 	}
 }
 
+func TestRealMainVersion(t *testing.T) {
+	var buf bytes.Buffer
+	if code := realMain([]string{"-version"}, &buf, nil); code != 0 {
+		t.Fatalf("-version returned %d, want 0", code)
+	}
+	if got := strings.TrimSpace(buf.String()); got != version {
+		t.Errorf("-version printed %q, want %q", got, version)
+	}
+}
+
 func TestRealMainBadFlag(t *testing.T) {
 	var buf bytes.Buffer
 	if code := realMain([]string{"-nonsense"}, &buf, nil); code != 2 {

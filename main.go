@@ -16,6 +16,10 @@ import (
 	"time"
 )
 
+// version is stamped at build time via -ldflags "-X main.version=...". It stays
+// "dev" for a plain `go build` / `go install` without that flag.
+var version = "dev"
+
 // scanners is the full registry. Each entry is gated to the platforms where it
 // makes sense; a single binary carries them all and selects at runtime.
 func scanners() []Scanner {
@@ -111,8 +115,13 @@ func realMain(args []string, stdout io.Writer, scs []Scanner) int {
 	out := fs.String("o", "sbom.html", "output HTML file path")
 	noOpen := fs.Bool("no-open", false, "do not open the report in a browser when done")
 	quiet := fs.Bool("quiet", false, "suppress progress output")
+	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *showVersion {
+		fmt.Fprintln(stdout, version)
+		return 0
 	}
 
 	goos := runtime.GOOS
