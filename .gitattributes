@@ -1,0 +1,20 @@
+# Normalize line endings to LF in the working tree on every platform. Without
+# this, Windows CI checks out source with CRLF (autocrlf) and `gofmt` — which
+# expects LF — reports every file as unformatted.
+* text=auto eol=lf
+
+# Explicit LF for the file types we ship, regardless of git's text heuristic.
+*.go    text eol=lf
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.html  text eol=lf
+*.mod   text eol=lf
+
+# Belt-and-suspenders: never munge line endings in binaries (none tracked today,
+# but release archives or images added later must stay byte-exact).
+*.png   binary
+*.jpg   binary
+*.gz    binary
+*.zip   binary

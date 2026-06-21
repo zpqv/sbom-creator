@@ -1,0 +1,130 @@
+name: validation
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '27 7 * * *' # nightly: exploratory fuzzing (see the 'fuzz' job)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Unit/integration tests, race detector, 100% coverage gate, static analysis
+  # and supply-chain scan — run natively on all three OSes so platform-specific
+  # parsing compiles and passes everywhere. `go test` also executes every Fuzz*
+  # target's seed corpus deterministically here; time-bounded exploration lives
+  # in the separate 'fuzz' job (kept off the merge path — it is nondeterministic).
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          # 'stable' = current Go release. Pinning an EOL minor (e.g. 1.21) makes
+          # govulncheck flag standard-library CVEs that are only fixed in newer Go.
+          go-version: 'stable'
+          cache: false # zero third-party deps -> no go.sum -> nothing to cache
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { echo 'unformatted:'; gofmt -l .; exit 1; }
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          "$(go env GOPATH)/bin/staticcheck" ./...
+
+      - name: govulncheck (supply-chain)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+      - name: gitleaks (secret scan)
+        run: |
+          # gitleaks' Go module path is still github.com/zricethezav/... even
+          # though the project now lives under the gitleaks org on GitHub.
+          go install github.com/zricethezav/gitleaks/v8@latest
+          "$(go env GOPATH)/bin/gitleaks" dir --redact --no-banner .
+
+      - name: test + race + coverage
+        run: go test -race -covermode=atomic -coverprofile=cover.out .
+
+      - name: coverage gate (100%)
+        run: |
+          total="$(go tool cover -func=cover.out | awk '/^total:/{gsub(/%/,"",$3); print $3}')"
+          echo "total coverage: ${total}%"
+          awk -v t="$total" 'BEGIN{exit !(t+0 >= 100.0)}' || { echo "coverage below 100%"; exit 1; }
+
+  # Mutation testing: proves the suite catches injected faults (not just runs
+  # lines). Linux only — it is the slow tier.
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with: { go-version: 'stable', cache: false }
+      - name: gremlins
+        run: |
+          go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
+          "$(go env GOPATH)/bin/gremlins" unleash --tags=""
+
+  # End-to-end: build and actually run the tool on each OS, exercising the real
+  # native scanners (winget/registry, dpkg/rpm, brew, …) and validating output.
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with: { go-version: 'stable', cache: false }
+      - name: run on the runner
+        run: go run . -o out.html -no-open -quiet
+      - name: validate output
+        run: |
+          test -f out.html
+          grep -q "Software Bill of Materials" out.html
+          grep -q "const DATA = " out.html
+          echo "SBOM generated and validated on ${{ matrix.os }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom-${{ matrix.os }}
+          path: out.html
+
+  # Exploratory fuzzing. Time-bounded `-fuzz` is nondeterministic and the engine
+  # can report "context deadline exceeded" on slow/contended runners, so it is
+  # kept OFF the push/PR merge path (where the deterministic seed corpus already
+  # runs inside the test job). Here it runs nightly and on manual dispatch, on
+  # the fast/stable ubuntu runner, where it can still surface new crashers. A
+  # real finding writes to testdata/fuzz and fails this job.
+  fuzz:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with: { go-version: 'stable', cache: false }
+      - name: exploratory fuzz (security guardrail + parsers)
+        run: |
+          for t in FuzzRenderInjectionSafety FuzzVendorFromHomepage FuzzClassifyCategory \
+                   FuzzParseBrew FuzzParsePip FuzzParseWindowsRegistry FuzzParseGem; do
+            echo "::group::$t"
+            go test -run='^$' -fuzz="^${t}$" -fuzztime=40s .
+            echo "::endgroup::"
+          done

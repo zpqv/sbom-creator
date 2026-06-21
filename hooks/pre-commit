@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Pre-commit gate (Validation Atlas S-sequence: secret scanning + formatter).
+# Enable once per clone with:   git config core.hooksPath hooks
+# Bypass in an emergency with:  git commit --no-verify
+set -uo pipefail
+
+fail=0
+
+# 1. Secret scanning on staged changes. On the very first commit there is no
+# HEAD to diff against, so scan the working tree instead.
+if command -v gitleaks >/dev/null 2>&1; then
+  if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    scan=(gitleaks git --staged --redact --no-banner)
+  else
+    scan=(gitleaks dir --redact --no-banner .)
+  fi
+  if ! "${scan[@]}"; then
+    echo "✗ gitleaks: potential secret in staged changes — commit blocked."
+    echo "  Review the finding above. If it is a verified false positive, re-run with: git commit --no-verify"
+    fail=1
+  fi
+else
+  echo "✗ gitleaks not installed — the required secret scan cannot run."
+  echo "  Install: brew install gitleaks   (or https://github.com/gitleaks/gitleaks/releases)"
+  fail=1
+fi
+
+# 2. gofmt on staged Go files.
+staged_go="$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)"
+if [ -n "$staged_go" ]; then
+  unformatted="$(gofmt -l $staged_go || true)"
+  if [ -n "$unformatted" ]; then
+    echo "✗ gofmt: staged files are not formatted:"
+    echo "$unformatted" | sed 's/^/    /'
+    echo "  Fix with: gofmt -w $unformatted"
+    fail=1
+  fi
+fi
+
+[ "$fail" = 0 ] && echo "✓ pre-commit: gitleaks + gofmt clean"
+exit "$fail"

@@ -1,0 +1,8 @@
+# build artifacts (reproduced by build.sh / CI)
+/dist/
+# coverage + test transients
+cover.out
+*.out
+*.test
+out.html
+sbom.html
