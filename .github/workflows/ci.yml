@@ -108,6 +108,25 @@ jobs:
           name: sbom-${{ matrix.os }}
           path: out.html
 
+  # Single required status check for branch protection: green only when every
+  # gating job (test, mutation, e2e across the matrix) succeeded. `if: always()`
+  # guarantees it still reports a status when an upstream job fails, so the
+  # required check never sticks at "Expected". fuzz is excluded on purpose — it
+  # is nightly/dispatch-only and skipped on the PR path. Uses no third-party
+  # actions, so it also satisfies a locked-down Actions policy.
+  gate:
+    needs: [test, mutation, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: require all gating jobs to have succeeded
+        run: |
+          for r in "${{ needs.test.result }}" "${{ needs.mutation.result }}" "${{ needs.e2e.result }}"; do
+            echo "job result: $r"
+            [ "$r" = "success" ] || { echo "a required job did not succeed: $r"; exit 1; }
+          done
+          echo "all required jobs succeeded"
+
   # Exploratory fuzzing. Time-bounded `-fuzz` is nondeterministic and the engine
   # can report "context deadline exceeded" on slow/contended runners, so it is
   # kept OFF the push/PR merge path (where the deterministic seed corpus already

@@ -24,6 +24,12 @@ var nameCat = map[string]string{
 	"codex": "AI / LLM Tools", "cline": "AI / LLM Tools", "ollama": "AI / LLM Tools",
 	"gemini-cli": "AI / LLM Tools", "copilot": "AI / LLM Tools", "copilot-cli": "AI / LLM Tools",
 	"qwen-code": "AI / LLM Tools", "cursor": "AI / LLM Tools", "perplexity": "AI / LLM Tools",
+	// AI CLIs that arrive via brew/uv/PATH rather than the maps above. Names are
+	// specific enough to be safe as global overrides (e.g. "block-goose-cli",
+	// not bare "goose", which collides with the Go database-migration tool).
+	"aider": "AI / LLM Tools", "aider-chat": "AI / LLM Tools", "sweagent": "AI / LLM Tools",
+	"swe-agent": "AI / LLM Tools", "block-goose-cli": "AI / LLM Tools", "opencode": "AI / LLM Tools",
+	"crush": "AI / LLM Tools",
 	// Browsers
 	"google chrome": "Browsers", "chromium": "Browsers", "firefox": "Browsers", "safari": "Browsers",
 	"brave browser": "Browsers", "microsoft edge": "Browsers", "arc": "Browsers", "opera": "Browsers",
@@ -119,7 +125,7 @@ var kwRules = []kwRule{
 	{"Developer Tools", []string{"compiler", "build", "linker", "debugger", "lint", "formatter", "ide", "editor", "language server"}},
 	{"Cloud & DevOps CLI", []string{"cloud", "kubernetes", "aws", "azure", "gcp", "terraform", "deploy", "ci/cd"}},
 	{"Languages & Runtimes", []string{"programming language", "runtime", "interpreter", "jdk", "sdk for"}},
-	{"AI / LLM Tools", []string{"llm", "ai assistant", "ai-powered", "coding agent", "language model", "gpt", "chatbot"}},
+	{"AI / LLM Tools", []string{"llm", "ai assistant", "ai-powered", "ai agent", "agentic", "autonomous agent", "coding agent", "coding assistant", "ai coding", "pair programming", "language model", "gpt", "chatbot"}},
 }
 
 // kwMatchers holds one boundary-anchored regex per rule, compiled once. A

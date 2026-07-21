@@ -11,6 +11,12 @@ func TestClassifyCategory(t *testing.T) {
 		// 1. exact name override wins over everything
 		{"Google Chrome", "", "Direct install", "Browsers"},
 		{"claude-code", "irrelevant", "npm (global)", "AI / LLM Tools"},
+		// AI CLIs that used to fall through the maps (regression guards):
+		// block-goose-cli is a brew formula not in formulaCat, and its own
+		// description ("extensible AI agent") only classifies once "ai agent"
+		// is a keyword — this asserts the name override catches it regardless.
+		{"block-goose-cli", "", "Homebrew (formula)", "AI / LLM Tools"},
+		{"aider-chat", "", "uv (tool)", "AI / LLM Tools"},
 		// 2. formula map (only when source is a brew formula)
 		{"openssl@3", "", "Homebrew (formula)", "Cryptography & Security"},
 		{"libpng", "", "Homebrew (formula)", "Image & Graphics"},
@@ -29,6 +35,7 @@ func TestClassifyCategory(t *testing.T) {
 		{"cloudthing", "deploy to kubernetes on aws", "X", "Cloud & DevOps CLI"},
 		{"langthing", "a programming language runtime", "X", "Languages & Runtimes"},
 		{"aithing", "an ai assistant coding agent (LLM)", "X", "AI / LLM Tools"},
+		{"agentthing", "an autonomous ai agent that goes beyond code suggestions", "X", "AI / LLM Tools"},
 		// 4. source-based defaults (no name/keyword hit)
 		{"somepylib", "", "pip (Python)", "Python Library"},
 		{"somegem", "", "gem (Ruby)", "Ruby Library"},
