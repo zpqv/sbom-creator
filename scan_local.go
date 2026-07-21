@@ -185,11 +185,17 @@ func scanPathApps() []Component {
 // pmOwned reports whether a resolved path belongs to another package manager
 // that already inventories it (uv tool venvs, uv-managed Pythons). Prevents
 // double-counting when such a manager also drops a shim into ~/.local/bin.
+// Backslashes are normalized to forward slashes so a Windows-style resolved
+// path matches the same way a POSIX one does.
 func pmOwned(real string) bool {
+	real = strings.ReplaceAll(real, `\`, "/")
 	return strings.Contains(real, "/uv/tools/") || strings.Contains(real, "/uv/python/")
 }
 
-func resolveSymlink(p string) string {
+// resolveSymlink follows a symlink to its target. It is a var so tests can
+// control resolution deterministically without creating real symlinks (which
+// require elevated privileges on Windows).
+var resolveSymlink = func(p string) string {
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return r
 	}

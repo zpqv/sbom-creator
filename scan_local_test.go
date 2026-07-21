@@ -113,6 +113,33 @@ func TestEnrichUvTool(t *testing.T) {
 	}
 }
 
+// fakeResolve overrides the resolveSymlink seam so a path's "resolved" target
+// is deterministic on every OS (no real symlinks, which are privileged on
+// Windows). Restored on cleanup.
+func fakeResolve(t *testing.T, fn func(string) string) {
+	t.Helper()
+	orig := resolveSymlink
+	t.Cleanup(func() { resolveSymlink = orig })
+	resolveSymlink = fn
+}
+
+func TestResolveSymlink(t *testing.T) {
+	tmp := t.TempDir()
+	f := filepath.Join(tmp, "real")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Existing path resolves to something that still exists.
+	if _, err := os.Stat(resolveSymlink(f)); err != nil {
+		t.Errorf("resolveSymlink(existing) -> unstatable: %v", err)
+	}
+	// Nonexistent path: EvalSymlinks errors, so the input is returned unchanged.
+	ghost := filepath.Join(tmp, "ghost")
+	if got := resolveSymlink(ghost); got != ghost {
+		t.Errorf("resolveSymlink(missing) = %q, want %q", got, ghost)
+	}
+}
+
 func TestScanPathApps(t *testing.T) {
 	home := t.TempDir()
 	fakeHome(t, home)
@@ -128,29 +155,23 @@ func TestScanPathApps(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// droid: plain curated binary. amp: symlink to a non-pm target.
-	writeExe(filepath.Join(localBin, "droid"))
-	ampReal := filepath.Join(home, "ampreal")
-	writeExe(ampReal)
-	if err := os.Symlink(ampReal, filepath.Join(localBin, "amp")); err != nil {
-		t.Fatal(err)
+	// Curated: droid, amp, kavith, opencode. Plus a non-curated file and a
+	// duplicate droid (in ocBin) to exercise the "seen" and "!ok" skips. No real
+	// symlinks — resolveSymlink is stubbed below.
+	for _, n := range []string{"droid", "amp", "kavith", "opencode", "randomtool"} {
+		writeExe(filepath.Join(localBin, n))
 	}
-	// kavith: broken symlink -> resolveSymlink error path, still processed.
-	if err := os.Symlink(filepath.Join(home, "nope"), filepath.Join(localBin, "kavith")); err != nil {
-		t.Fatal(err)
-	}
-	// opencode: symlink into a uv/tools tree -> pmOwned -> skipped.
-	uvOwned := filepath.Join(home, "uv", "tools", "opencode", "bin", "opencode")
-	if err := os.MkdirAll(filepath.Dir(uvOwned), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeExe(uvOwned)
-	if err := os.Symlink(uvOwned, filepath.Join(localBin, "opencode")); err != nil {
-		t.Fatal(err)
-	}
-	// randomtool: not curated -> skipped. droid dup in ocBin -> seen -> skipped.
-	writeExe(filepath.Join(localBin, "randomtool"))
 	writeExe(filepath.Join(ocBin, "droid"))
+
+	// opencode "resolves" into a uv/tools tree -> pmOwned -> skipped. Others
+	// resolve to themselves. Uses a forward-slash marker to prove pmOwned is
+	// separator-agnostic even when the rest of the path is OS-native.
+	fakeResolve(t, func(p string) string {
+		if strings.HasSuffix(p, "opencode") {
+			return "/somewhere/uv/tools/opencode/bin/opencode"
+		}
+		return p
+	})
 
 	// --version succeeds for everything except kavith (exercises the empty path).
 	fakeExecFunc(t, func(name string, _ []string) fakeCmd {
@@ -237,6 +258,10 @@ func TestParseVersionToken(t *testing.T) {
 func TestPmOwned(t *testing.T) {
 	if !pmOwned("/Users/x/.local/share/uv/tools/aider-chat/bin/aider") {
 		t.Error("uv tool shim should be pm-owned")
+	}
+	// Backslash (Windows-style) path must still match after ToSlash.
+	if !pmOwned(`C:\Users\x\uv\tools\aider-chat\bin\aider.exe`) {
+		t.Error("windows-style uv tool path should be pm-owned")
 	}
 	if !pmOwned("/Users/x/.local/share/uv/python/cpython-3.12/bin/python3.12") {
 		t.Error("uv python shim should be pm-owned")
