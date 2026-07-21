@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+// userHomeDir is the seam for locating $HOME. Tests override it so the
+// filesystem scanners run against a temp dir deterministically on every OS
+// (os.UserHomeDir reads $HOME on unix but %USERPROFILE% on Windows, which the
+// CI matrix also runs).
+var userHomeDir = os.UserHomeDir
+
 // ---------------------------------------------------------------------------
 // Sources that live outside the mainstream package managers. Modern developer
 // CLIs increasingly ship via `uv tool install`, `bun add -g`, or their own
@@ -63,7 +69,7 @@ func parseUvToolList(out string) []Component {
 // metadata is never mistaken for the tool's own. Best-effort: leaves fields
 // blank when the file is absent or unreadable.
 func enrichUvTool(c *Component) {
-	home, err := os.UserHomeDir()
+	home, err := userHomeDir()
 	if err != nil {
 		return
 	}
@@ -143,7 +149,7 @@ var pathAppDirs = []string{
 }
 
 func scanPathApps() []Component {
-	home, err := os.UserHomeDir()
+	home, err := userHomeDir()
 	if err != nil {
 		return nil
 	}

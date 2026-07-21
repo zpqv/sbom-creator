@@ -2,10 +2,43 @@
 
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// fakeHome / failHome override the userHomeDir seam so the filesystem scanners
+// run against a temp dir (or a forced error) deterministically on every OS.
+func fakeHome(t *testing.T, dir string) {
+	t.Helper()
+	orig := userHomeDir
+	t.Cleanup(func() { userHomeDir = orig })
+	userHomeDir = func() (string, error) { return dir, nil }
+}
+
+func failHome(t *testing.T) {
+	t.Helper()
+	orig := userHomeDir
+	t.Cleanup(func() { userHomeDir = orig })
+	userHomeDir = func() (string, error) { return "", os.ErrNotExist }
+}
+
+// writeUvMetadata drops a dist-info METADATA for tool `pkg` under a fake uv
+// tools tree rooted at home, matching enrichUvTool's glob.
+func writeUvMetadata(t *testing.T, home, tool, pkg, body string) {
+	t.Helper()
+	dir := filepath.Join(home, ".local", "share", "uv", "tools", tool, "lib", "python3.12", "site-packages", pkg+".dist-info")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "METADATA"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestParseUvToolList(t *testing.T) {
-	// Real `uv tool list` shape: flush-left "name vX.Y", executables indented.
 	out := "aider-chat v0.86.2\n- aider\nsweagent v1.1.0\n- sweagent\n"
 	got := parseUvToolList(out)
 	if len(got) != 2 {
@@ -17,9 +50,141 @@ func TestParseUvToolList(t *testing.T) {
 	if got[1].Name != "sweagent" || got[1].Version != "1.1.0" {
 		t.Errorf("second = %+v", got[1])
 	}
-	// Executable ("- ...") and blank lines must not become components.
-	if c := parseUvToolList("- aider\n\n   indented\n"); len(c) != 0 {
+	// Non-tool lines produce nothing: "- exe", blank, indented, single-field,
+	// and a second field that is not a "vX" version.
+	if c := parseUvToolList("- aider\n\n   indented\nsolo\ntool notaversion\n"); len(c) != 0 {
 		t.Errorf("expected no components from non-tool lines, got %+v", c)
+	}
+}
+
+func TestScanUvTools(t *testing.T) {
+	home := t.TempDir()
+	fakeHome(t, home)
+	writeUvMetadata(t, home, "aider-chat", "aider_chat-0.86.2",
+		"Name: aider-chat\nSummary: Aider is AI pair programming in your terminal\n"+
+			"Project-URL: Homepage, https://github.com/Aider-AI/aider\n\nbody\n")
+
+	fakeExec(t, map[string]fakeCmd{"uv": ok("aider-chat v0.86.2\n- aider\n")})
+	got := scanUvTools()
+	if len(got) != 1 {
+		t.Fatalf("scanUvTools = %d comps, want 1", len(got))
+	}
+	if got[0].Category != "AI / LLM Tools" {
+		t.Errorf("category = %q", got[0].Category)
+	}
+	if got[0].Desc == "" || got[0].Homepage == "" {
+		t.Errorf("metadata not enriched: %+v", got[0])
+	}
+
+	// `uv` errors -> nil.
+	fakeExec(t, map[string]fakeCmd{})
+	if scanUvTools() != nil {
+		t.Error("scanUvTools failure should be nil")
+	}
+}
+
+func TestEnrichUvTool(t *testing.T) {
+	// home lookup error -> no-op.
+	failHome(t)
+	c := Component{Name: "x"}
+	enrichUvTool(&c)
+	if c.Desc != "" {
+		t.Error("expected no enrichment when home errors")
+	}
+
+	// no matching dist-info -> no-op.
+	home := t.TempDir()
+	fakeHome(t, home)
+	c = Component{Name: "ghost"}
+	enrichUvTool(&c)
+	if c.Desc != "" {
+		t.Error("expected no enrichment when METADATA absent")
+	}
+
+	// METADATA path exists but is unreadable (a directory) -> no-op, no panic.
+	badMeta := filepath.Join(home, ".local", "share", "uv", "tools", "dirtool", "lib", "py", "site-packages", "dirtool-1.0.dist-info", "METADATA")
+	if err := os.MkdirAll(badMeta, 0o755); err != nil { // METADATA itself is a dir
+		t.Fatal(err)
+	}
+	c = Component{Name: "dirtool"}
+	enrichUvTool(&c)
+	if c.Desc != "" {
+		t.Error("expected no enrichment when METADATA is unreadable")
+	}
+}
+
+func TestScanPathApps(t *testing.T) {
+	home := t.TempDir()
+	fakeHome(t, home)
+	localBin := filepath.Join(home, ".local", "bin")
+	ocBin := filepath.Join(home, ".opencode", "bin")
+	for _, d := range []string{localBin, ocBin} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeExe := func(p string) {
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// droid: plain curated binary. amp: symlink to a non-pm target.
+	writeExe(filepath.Join(localBin, "droid"))
+	ampReal := filepath.Join(home, "ampreal")
+	writeExe(ampReal)
+	if err := os.Symlink(ampReal, filepath.Join(localBin, "amp")); err != nil {
+		t.Fatal(err)
+	}
+	// kavith: broken symlink -> resolveSymlink error path, still processed.
+	if err := os.Symlink(filepath.Join(home, "nope"), filepath.Join(localBin, "kavith")); err != nil {
+		t.Fatal(err)
+	}
+	// opencode: symlink into a uv/tools tree -> pmOwned -> skipped.
+	uvOwned := filepath.Join(home, "uv", "tools", "opencode", "bin", "opencode")
+	if err := os.MkdirAll(filepath.Dir(uvOwned), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExe(uvOwned)
+	if err := os.Symlink(uvOwned, filepath.Join(localBin, "opencode")); err != nil {
+		t.Fatal(err)
+	}
+	// randomtool: not curated -> skipped. droid dup in ocBin -> seen -> skipped.
+	writeExe(filepath.Join(localBin, "randomtool"))
+	writeExe(filepath.Join(ocBin, "droid"))
+
+	// --version succeeds for everything except kavith (exercises the empty path).
+	fakeExecFunc(t, func(name string, _ []string) fakeCmd {
+		if strings.HasSuffix(name, "kavith") {
+			return fakeCmd{exit: 1}
+		}
+		return ok("1.2.3\n")
+	})
+
+	got := scanPathApps()
+	byName := map[string]Component{}
+	for _, c := range got {
+		byName[c.Name] = c
+	}
+	if len(got) != 3 {
+		t.Fatalf("scanPathApps = %d comps, want 3 (droid, amp, kavith): %v", len(got), byName)
+	}
+	if _, ok := byName["OpenCode"]; ok {
+		t.Error("uv-owned opencode symlink should have been skipped")
+	}
+	if byName["Droid"].Version != "1.2.3" {
+		t.Errorf("droid version = %q, want 1.2.3", byName["Droid"].Version)
+	}
+	if byName["kavith"].Version != "" {
+		t.Errorf("kavith version = %q, want empty (failed --version)", byName["kavith"].Version)
+	}
+	if byName["Droid"].Category != "AI / LLM Tools" {
+		t.Errorf("droid category = %q", byName["Droid"].Category)
+	}
+
+	// home lookup error -> nil.
+	failHome(t)
+	if scanPathApps() != nil {
+		t.Error("scanPathApps should be nil when home errors")
 	}
 }
 
@@ -43,9 +208,10 @@ func TestApplyPyMetadata(t *testing.T) {
 		t.Errorf("license = %q", c.License)
 	}
 
-	// Legacy Home-page header populates homepage; UNKNOWN license is dropped.
+	// Legacy Home-page header populates homepage; UNKNOWN license is dropped;
+	// a non-Homepage Project-URL is ignored.
 	var c2 Component
-	applyPyMetadata(&c2, "Home-page: https://example.org\nLicense: UNKNOWN\n\n")
+	applyPyMetadata(&c2, "Home-page: https://example.org\nLicense: UNKNOWN\nProject-URL: Funding, https://x\n\n")
 	if c2.Homepage != "https://example.org" || c2.License != "" {
 		t.Errorf("legacy parse = %+v", c2)
 	}
@@ -72,10 +238,12 @@ func TestPmOwned(t *testing.T) {
 	if !pmOwned("/Users/x/.local/share/uv/tools/aider-chat/bin/aider") {
 		t.Error("uv tool shim should be pm-owned")
 	}
+	if !pmOwned("/Users/x/.local/share/uv/python/cpython-3.12/bin/python3.12") {
+		t.Error("uv python shim should be pm-owned")
+	}
 	if pmOwned("/Users/x/.amp/bin/amp") {
 		t.Error("standalone installer path should not be pm-owned")
 	}
-	// A bun-global binary must NOT be treated as pm-owned (we inventory it here).
 	if pmOwned("/Users/x/.bun/bin/omp") {
 		t.Error("bun bin should not be pm-owned")
 	}
