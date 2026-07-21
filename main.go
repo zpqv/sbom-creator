@@ -52,6 +52,18 @@ func scanners() []Scanner {
 			Install: map[string]string{"darwin": "brew install rust  # or rustup", "linux": `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`, "windows": "winget install Rustlang.Rustup"},
 			Probe:   func() bool { return have("cargo") }, Scan: scanCargo,
 		},
+		{
+			Name: "uv (tool)", Site: "https://docs.astral.sh/uv/",
+			Install: map[string]string{"darwin": "brew install uv", "linux": "curl -LsSf https://astral.sh/uv/install.sh | sh", "windows": "winget install astral-sh.uv"},
+			Probe:   func() bool { return have("uv") }, Scan: scanUvTools,
+		},
+		// Self-installed CLIs on PATH (~/.local/bin, ~/.bun/bin, ~/.opencode/bin):
+		// no backing package manager, so always relevant on unix; a curated map
+		// decides what to inventory (see pathAppMeta).
+		{
+			Name: "standalone CLIs (PATH)", OS: []string{"darwin", "linux"},
+			Probe: func() bool { return true }, Scan: scanPathApps,
+		},
 		// macOS applications: no external tool needed (uses built-in plutil).
 		{
 			Name: "macOS applications", OS: []string{"darwin"},
